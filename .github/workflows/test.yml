@@ -6,18 +6,11 @@ on:
 
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    # macOS only: that is where the plugin is used. zsh ships with macOS; glow comes from Homebrew.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install zsh
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes zsh
       - name: Install glow
-        if: runner.os == 'macOS'
         run: brew install glow
       - name: Run tests
         run: zsh tests/run.zsh

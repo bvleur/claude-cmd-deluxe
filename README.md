@@ -81,7 +81,7 @@ No framework needed, only zsh. `tests/bin/claude` is a fake Claude CLI that reco
 - `settings.test.zsh`: default and overridden settings and key bindings, in and outside Ghostty.
 - `widgets.test.zsh`: an interactive zsh in a pseudo-terminal (`zsh/zpty`), driven with real key presses. A probe key reads the line and the bottom area back.
 
-GitHub Actions runs the suite on Linux and macOS (with real glow on macOS).
+GitHub Actions runs the suite on macOS, with real glow.
 
 ## Known limitations
 
