@@ -408,7 +408,7 @@ $1")
   _cc_show
 }
 
-#: [ccd, more] zle widget (⌃; in Ghostty, ⌃G elsewhere): turn the typed text into a command; again: next alternative
+#: [ccd] key ⌃; (Ghostty; ⌃G elsewhere): turn the text on the line into a command; again: next alternative
 ccd-generate() {
   # Cycle: the buffer is still exactly the current alternative
   if (( ${#_cc_alts} > 1 && _cc_idx )) && [[ $BUFFER == ${_cc_alts[_cc_idx]} ]]; then
@@ -553,7 +553,7 @@ _cc_run() {
   zle reset-prompt
 }
 
-#: [ccd, more] zle widget (⌃⇧; in Ghostty): show the menu, then run the option of the next key
+#: [ccd] key ⌃⇧; (Ghostty): menu under the line, then e explain, E explain in a pager, f fix, h all keys, …
 ccd-menu() {
   _cc_bar "$(_cc_menu_text)"
   zle -R
@@ -591,7 +591,7 @@ ccd-refresh() {
 #: [ccd, more] show exactly what context ccd sends to Claude
 ccd-context() { _cc_context }
 
-#: [ccd] all ccd keys and commands; calls no model
+#: [ccd, more] all ccd keys and commands; calls no model
 ccd-help() {
   emulate -L zsh
   local gen=$(_cc_keylabel $CLAUDE_CMD_KEY_GEN) rows="" item
