@@ -88,7 +88,15 @@ SETUP
   CC_PTY_OUT=""
 }
 
-pty_send() { zpty -w -n cc "$1" }
+pty_send() { _pty_drain; zpty -w -n cc "$1" }
+
+# Read whatever the shell has written so far into CC_PTY_OUT. Must happen while waiting for anything: a
+# pseudo-terminal buffers little (about 1 KB on macOS), and once it is full zle blocks on its next write, so
+# the shell would stop handling keys, the probe included.
+_pty_drain() {
+  local chunk
+  while zpty -r -t cc chunk 2>/dev/null; do CC_PTY_OUT+=$chunk; done
+}
 
 # Read until the output collected since the last pty_reset, without escape sequences, contains $1, or $2
 # seconds pass. $1 is literal text in which only * is a wildcard.
@@ -97,7 +105,7 @@ pty_expect() {
   pat=${pat//\\\*/*}
   local -F deadline=$(( EPOCHREALTIME + ${2:-5} ))
   while (( EPOCHREALTIME < deadline )); do
-    while zpty -r -t cc chunk 2>/dev/null; do CC_PTY_OUT+=$chunk; done
+    _pty_drain
     [[ $(pty_text) == *${~pat}* ]] && return 0
     sleep 0.05
   done
@@ -111,9 +119,10 @@ pty_reset() { CC_PTY_OUT="" }
 typeset -g STATE_BUFFER STATE_BOTTOM STATE_HL
 pty_state() {
   rm -f $CC_TEST_DIR/state
+  _pty_drain
   zpty -w -n cc $'\x14'
   local -F deadline=$(( EPOCHREALTIME + 5 ))
-  while [[ ! -s $CC_TEST_DIR/state ]] && (( EPOCHREALTIME < deadline )); do sleep 0.05; done
+  while [[ ! -s $CC_TEST_DIR/state ]] && (( EPOCHREALTIME < deadline )); do _pty_drain; sleep 0.05; done
   local s=$(<$CC_TEST_DIR/state)
   STATE_BUFFER=${s%%@@SEP@@*} STATE_BOTTOM=${${s#*@@SEP@@}%%@@HL@@*} STATE_HL=${s##*@@HL@@}
 }
