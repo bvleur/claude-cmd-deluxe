@@ -81,6 +81,33 @@ else
   print -r -- "  - skipped: glow not installed"
 fi
 
+# ── colour codes → plain text + region_highlight spans ───────────────────────
+
+test_case "ansi: 256 colours, background, bold and reset become spans"
+_cc_ansi_parse $'\e[38;5;252mHi \e[1;38;5;203;48;5;236m ls \e[0m done'
+assert_eq 'Hi  ls  done' "$REPLY"
+assert_eq '0 3 fg=252|3 7 fg=203,bg=236,bold' "${(j:|:)reply}"
+
+test_case "ansi: basic, bright and true colours, underline, bare reset"
+_cc_ansi_parse $'\e[31ma\e[m\e[92mb\e[0m\e[38;2;255;0;16mc\e[0m\e[4md\e[24me'
+assert_eq 'abcde' "$REPLY"
+assert_eq '0 1 fg=1|1 2 fg=10|2 3 fg=#ff0010|3 4 underline' "${(j:|:)reply}"
+
+test_case "ansi: other escape sequences are dropped, hyperlinks keep their text"
+_cc_ansi_parse $'a\e[2Kb\e]8;;https://x\e\\link\e]8;;\e\\c'
+assert_eq 'ablinkc' "$REPLY"
+assert_eq 0 ${#reply}
+
+test_case "ansi: offsets count characters, not bytes"
+_cc_ansi_parse $'✦ é\e[31mü\e[0m'
+assert_eq '✦ éü' "$REPLY"
+assert_eq '3 4 fg=1' "${(j:|:)reply}"
+
+test_case "ansi: plain text has no spans"
+_cc_ansi_parse 'plain text'
+assert_eq 'plain text' "$REPLY"
+assert_eq 0 ${#reply}
+
 # ── prompts and the call to claude ────────────────────────────────────────────
 
 test_case "explain prompt asks for a table in the configured language"
