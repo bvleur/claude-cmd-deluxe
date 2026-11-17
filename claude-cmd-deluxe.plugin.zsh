@@ -388,5 +388,9 @@ claude-cmd-help-widget() {
   _cc_bar ""
 }
 
+# Opt-in for a `help` command that lists the `#:` description lines of the files in $HELP_SOURCES: when that
+# array exists, add this file to it
+(( ${+HELP_SOURCES} )) && HELP_SOURCES+=( ${${(%):-%x}:A} )
+
 # Refresh the tool list at most once per 24 hours, in the background
 _cc_tools_stale && { _cc_refresh_tools &! } 2>/dev/null
