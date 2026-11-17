@@ -1,6 +1,6 @@
 # End-to-end tests: an interactive zsh in a pseudo-terminal (zsh/zpty), driven with real key presses.
-# The line and the bottom area are read back through the ⌃T probe (pty_state); text printed above the
-# prompt is read from the terminal output (pty_expect / pty_text).
+# The line, the bottom area and region_highlight are read back through the ⌃T probe (pty_state); command
+# output is read from the terminal output (pty_expect / pty_text).
 source ${0:A:h}/lib.zsh
 
 typeset -g CTRL_G=$'\a' CTRL_X_E=$'\x18e' CTRL_X_F=$'\x18f' ENTER=$'\r'
@@ -64,21 +64,21 @@ pty_send "x$CTRL_G"
 assert_true "no error shown: $STATE_BOTTOM" pty_wait_bottom 'claude: no usable answer — boom'
 assert_eq 'x' "$STATE_BUFFER"
 
-test_case "⌃X e prints the explanation above the prompt and leaves the line alone"
+test_case "⌃X e shows the explanation under the line and leaves the line alone"
 pty_start
 pty_send "echo \$((40+2))$CTRL_X_E"
-assert_true "no explanation: $(pty_text)" pty_expect 'Prints the word hi'
-assert_contains "$(pty_text)" '| Part | Meaning |'
+assert_true "no explanation: $STATE_BOTTOM" pty_wait_bottom 'Prints the word hi'
+assert_contains "$STATE_BOTTOM" '| Part | Meaning |'
+assert_not_contains "$STATE_BOTTOM" 'explaining…' 'progress line still there'
 assert_contains "$(<$CC_TEST_DIR/claude-stdin)" $'Command:\necho $((40+2))'
-pty_state
 assert_eq 'echo $((40+2))' "$STATE_BUFFER"
-assert_eq '' "$STATE_BOTTOM" 'progress line not cleared after explaining'
+run '' '42'
 
 test_case "⌃X e on an empty line explains the previous command"
 pty_start
 run 'print -r -- PREV-$((1+1))' 'PREV-2'
-pty_reset; pty_send $CTRL_X_E
-assert_true "no explanation: $(pty_text)" pty_expect 'Prints the word hi'
+pty_send $CTRL_X_E
+assert_true "no explanation: $STATE_BOTTOM" pty_wait_bottom 'Prints the word hi'
 assert_contains "$(<$CC_TEST_DIR/claude-stdin)" 'print -r -- PREV-$((1+1))'
 
 test_case "⌃X f fixes the previous command with its exit status and the typed hint"
@@ -101,17 +101,35 @@ assert_eq '' "$STATE_BOTTOM"
 test_case "Ghostty: ⌃; explains, ⌃⇧; shows the key overview"
 pty_start TERM_PROGRAM=ghostty
 pty_send "echo hi$GHOSTTY_CTRL_SEMI"
-assert_true "⌃; did not explain: $(pty_text)" pty_expect 'Prints the word hi'
-pty_reset; pty_send $GHOSTTY_CTRL_SHIFT_SEMI
-assert_true "⌃⇧; did not show help: $(pty_text)" pty_expect '| Key | What |'
-assert_contains "$(pty_text)" '| `⌃⇧;` | This overview. |'
-assert_contains "$(pty_text)" '| `⌃;` | Explain'
-pty_state
+assert_true "⌃; did not explain: $STATE_BOTTOM" pty_wait_bottom 'Prints the word hi'
+pty_send $GHOSTTY_CTRL_SHIFT_SEMI
+assert_true "⌃⇧; did not show help: $STATE_BOTTOM" pty_wait_bottom '| Key | What |'
+assert_contains "$STATE_BOTTOM" '| `⌃⇧;` | This overview. |'
+assert_contains "$STATE_BOTTOM" '| `⌃;` | Explain'
 assert_eq 'echo hi' "$STATE_BUFFER"
 
 test_case "explanations go through glow when it is installed"
 pty_start PATH="$CC_ROOT/tests/glow-bin:$PATH"
 pty_send "echo hi$CTRL_X_E"
-assert_true "glow not used: $(pty_text)" pty_expect 'GLOW-ARGS: -w=* -s=dark -'
+assert_true "glow not used: $STATE_BOTTOM" pty_wait_bottom 'GLOW-ARGS: -w='
+assert_contains "$STATE_BOTTOM" '-s=dark -'
+
+test_case "colours from glow become highlights that move along when you type"
+pty_start PATH="$CC_ROOT/tests/glow-ansi-bin:$PATH"
+pty_send "echo hi$CTRL_X_E"
+assert_true "no explanation: $STATE_BOTTOM" pty_wait_bottom 'Explained: Prints the word hi'
+assert_not_contains "$STATE_BOTTOM" $'\e' 'escape codes in the bottom area'
+# BUFFER "echo hi" is 7 characters, the bottom area starts with a newline: "Explained" is at 8..17
+assert_contains "|$STATE_HL|" '|8 17 fg=203,bold|'
+pty_send " there"
+pty_state
+assert_eq 'echo hi there' "$STATE_BUFFER"
+assert_contains "$STATE_BOTTOM" 'Explained: Prints the word hi' 'explanation gone while typing'
+assert_contains "|$STATE_HL|" '|14 23 fg=203,bold|' 'highlight did not move along'
+assert_not_contains "|$STATE_HL|" '|8 17 ' 'old highlight left behind'
+run '' 'hi there'
+pty_state
+assert_eq '' "$STATE_BOTTOM"
+assert_not_contains "$STATE_HL" 'fg=203' 'highlight left after the line was accepted'
 
 finish

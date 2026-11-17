@@ -72,12 +72,13 @@ pty_start() {
   CC_PTY_OUT=""
   zpty cc env -i HOME=$CC_TEST_DIR PATH=$PATH LANG=$LANG LC_ALL=$LC_ALL TERM=xterm-256color COLUMNS=120 LINES=40 \
     CC_TEST_DIR=$CC_TEST_DIR XDG_CONFIG_HOME=$XDG_CONFIG_HOME XDG_CACHE_HOME=$XDG_CACHE_HOME "$@" zsh -f -i
-  # ⌃T is a probe: it writes the line (BUFFER) and the bottom area (POSTDISPLAY) to a file, see pty_state
+  # ⌃T is a probe: it writes the line (BUFFER), the bottom area (POSTDISPLAY) and region_highlight to a file,
+  # see pty_state
   cat >| $CC_TEST_DIR/setup.zsh <<SETUP
 bindkey -e
 PS1='PROMPT> '
 source ${(q)CC_PLUGIN}
-_cc_probe() { print -r -- "\$BUFFER@@SEP@@\$POSTDISPLAY" >| \$CC_TEST_DIR/state }
+_cc_probe() { print -r -- "\$BUFFER@@SEP@@\$POSTDISPLAY@@HL@@\${(j:|:)region_highlight}" >| \$CC_TEST_DIR/state }
 zle -N _cc_probe
 bindkey '^T' _cc_probe
 SETUP
@@ -105,15 +106,16 @@ pty_expect() {
 
 pty_reset() { CC_PTY_OUT="" }
 
-# Ask the probe for the current line and bottom area. Sets STATE_BUFFER and STATE_BOTTOM.
-typeset -g STATE_BUFFER STATE_BOTTOM
+# Ask the probe for the current state. Sets STATE_BUFFER, STATE_BOTTOM and STATE_HL (region_highlight
+# entries joined with |).
+typeset -g STATE_BUFFER STATE_BOTTOM STATE_HL
 pty_state() {
   rm -f $CC_TEST_DIR/state
   zpty -w -n cc $'\x14'
   local -F deadline=$(( EPOCHREALTIME + 5 ))
   while [[ ! -s $CC_TEST_DIR/state ]] && (( EPOCHREALTIME < deadline )); do sleep 0.05; done
   local s=$(<$CC_TEST_DIR/state)
-  STATE_BUFFER=${s%%@@SEP@@*} STATE_BOTTOM=${s#*@@SEP@@}
+  STATE_BUFFER=${s%%@@SEP@@*} STATE_BOTTOM=${${s#*@@SEP@@}%%@@HL@@*} STATE_HL=${s##*@@HL@@}
 }
 
 # Wait until the bottom area contains $1 (a plain string), or 5 seconds pass

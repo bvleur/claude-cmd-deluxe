@@ -1,0 +1,4 @@
+#!/usr/bin/env zsh
+# Fake glow that colours like the real one: a bold red word, then its input unchanged
+print -rn -- $'\e[1;38;5;203mExplained\e[0m: '
+cat

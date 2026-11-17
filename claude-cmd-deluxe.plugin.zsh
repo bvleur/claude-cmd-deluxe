@@ -229,17 +229,123 @@ _cc_is_destructive() {
   return 1
 }
 
-# Plain-text messages (info bar, progress, errors) go in POSTDISPLAY: zle draws it under the prompt line, and it
-# is cleared again when the line is accepted (see _cc_line_finish). Empty $1 clears it. No ANSI colour here:
-# zle prints escape codes in POSTDISPLAY literally.
+# ── bottom area ──────────────────────────────────────────────────────────────
+#
+# Everything claude-cmd shows goes in POSTDISPLAY: zle draws it under the line, you can keep typing, and it is
+# cleared when the line is accepted (_cc_line_finish). zle prints escape codes in POSTDISPLAY literally, so
+# coloured text (glow's output) is split into plain text plus colour spans (_cc_ansi_parse). The spans become
+# region_highlight entries, which zle positions from the start of BUFFER, so they are rebuilt before every
+# redraw (_cc_pre_redraw): when you type, the bottom area moves and its colours move with it.
+
+typeset -ga _cc_spans _cc_hl_added   # spans: "start end spec" within POSTDISPLAY · entries we put in region_highlight
+
+# Split text with ANSI SGR colour codes. Sets REPLY to the plain text and reply to "start end spec" spans, with
+# spec in region_highlight syntax (fg=203,bold). Other escape sequences are dropped.
+_cc_ansi_parse() {
+  emulate -L zsh
+  setopt extendedglob
+  local rest=$1 plain="" chunk p fg="" bg="" bold=0 ul=0 spec start=0
+  local -a ps
+  reply=()
+
+  _cc_span_end() {   # close the span that runs from $start to the end of $plain
+    local -a sp=()
+    [[ -n $fg ]] && sp+=(fg=$fg)
+    [[ -n $bg ]] && sp+=(bg=$bg)
+    (( bold )) && sp+=(bold)
+    (( ul )) && sp+=(underline)
+    spec=${(j:,:)sp}
+    (( ${#plain} > start )) && [[ -n $spec ]] && reply+=("$start ${#plain} $spec")
+    start=${#plain}
+  }
+
+  while [[ $rest == *$'\e'* ]]; do
+    plain+=${rest%%$'\e'*}
+    rest=${rest#*$'\e'}
+    if [[ $rest == (#b)\[([0-9\;]#)([@-~])* ]]; then
+      rest=${rest:$(( ${#match[1]} + 2 ))}
+      [[ $match[2] == m ]] || continue
+      _cc_span_end
+      ps=( ${(s:;:)match[1]} ); (( ${#ps} )) || ps=(0)
+      while (( ${#ps} )); do
+        p=${ps[1]}; shift ps
+        case $p in
+          (|0)       fg="" bg="" bold=0 ul=0 ;;
+          (1)        bold=1 ;;
+          (22)       bold=0 ;;
+          (4)        ul=1 ;;
+          (24)       ul=0 ;;
+          (3[0-7])   fg=$(( p - 30 )) ;;
+          (9[0-7])   fg=$(( p - 90 + 8 )) ;;
+          (39)       fg="" ;;
+          (4[0-7])   bg=$(( p - 40 )) ;;
+          (10[0-7])  bg=$(( p - 100 + 8 )) ;;
+          (49)       bg="" ;;
+          (38|48)
+            if [[ ${ps[1]} == 5 ]]; then
+              chunk=${ps[2]}; shift 2 ps
+            elif [[ ${ps[1]} == 2 ]]; then
+              chunk=$(printf '#%02x%02x%02x' ${ps[2]:-0} ${ps[3]:-0} ${ps[4]:-0}); shift 4 ps
+            else
+              chunk=""
+            fi
+            [[ $p == 38 ]] && fg=$chunk || bg=$chunk ;;
+        esac
+      done
+    elif [[ $rest == \]* ]]; then     # OSC (e.g. a hyperlink): drop up to BEL or ESC \
+      rest=${rest#*($'\a'|$'\e'\\)}
+    else
+      rest=${rest:1}
+    fi
+  done
+  plain+=$rest
+  _cc_span_end
+  unfunction _cc_span_end
+  REPLY=$plain
+}
+
+# Show $1 (plain text, may contain ANSI colour) in the bottom area. Empty $1 clears it.
 _cc_bar() {
-  if [[ -n $1 ]]; then POSTDISPLAY=$'\n'"$1"; else POSTDISPLAY=""; fi
+  local -a reply
+  local REPLY s
+  _cc_ansi_parse "$1"
+  _cc_spans=()
+  if [[ -n $REPLY ]]; then
+    POSTDISPLAY=$'\n'$REPLY
+    for s in $reply; do      # +1 for the newline in front
+      s=(${=s}); _cc_spans+=("$(( s[1] + 1 )) $(( s[2] + 1 )) ${s[3]}")
+    done
+  else
+    POSTDISPLAY=""
+  fi
+  _cc_pre_redraw
   zle -R
 }
 
-_cc_line_finish() { POSTDISPLAY="" }
+# Before every redraw: put the colour spans at their current position (they start after BUFFER)
+_cc_pre_redraw() {
+  local s
+  local -a parts
+  (( ${#_cc_hl_added} )) && region_highlight=( ${region_highlight:|_cc_hl_added} )
+  _cc_hl_added=()
+  if [[ -n $POSTDISPLAY ]]; then
+    for s in $_cc_spans; do
+      parts=(${=s})
+      _cc_hl_added+=("$(( ${#BUFFER} + parts[1] )) $(( ${#BUFFER} + parts[2] )) ${parts[3]}")
+    done
+    region_highlight+=( $_cc_hl_added )
+  fi
+}
+
+_cc_line_finish() {
+  POSTDISPLAY=""
+  _cc_spans=()
+  _cc_pre_redraw
+}
+
 autoload -Uz add-zle-hook-widget
 add-zle-hook-widget line-finish _cc_line_finish
+add-zle-hook-widget line-pre-redraw _cc_pre_redraw
 
 _cc_show() {
   BUFFER=${_cc_alts[_cc_idx]}
@@ -308,11 +414,7 @@ $target")
   if [[ -z ${out//[[:space:]]/} ]]; then
     _cc_bar "$(_cc_error_msg)"
   else
-    # Coloured markdown can't go in POSTDISPLAY (zle shows the escape codes literally), so print it above
-    # the prompt; the plain-text bottom area is only cleared of its progress line.
-    zle -I
-    print -r -- "$(print -r -- "$out" | _cc_render)"
-    _cc_bar ""
+    _cc_bar "$(print -r -- "$out" | _cc_render)"
   fi
 }
 
@@ -383,9 +485,7 @@ Helpers: \`claude-cmd-prefs\`, \`claude-cmd-refresh\`, \`claude-cmd-context\`."
 
 #: zle widget (⌃⇧; in Ghostty): shows the overview above the prompt, without a model call
 claude-cmd-help-widget() {
-  zle -I
-  claude-cmd-help
-  _cc_bar ""
+  _cc_bar "$(claude-cmd-help)"
 }
 
 # Opt-in for a `help` command that lists the `#:` description lines of the files in $HELP_SOURCES: when that
