@@ -1,0 +1,5 @@
+#!/usr/bin/env zsh
+# Fake glow: shows how it was called and what it received, so tests can check flags and input.
+print -r -- "GLOW-ARGS: $*"
+print -r -- "GLOW-COLOR: ${CLICOLOR_FORCE:-unset}"
+cat

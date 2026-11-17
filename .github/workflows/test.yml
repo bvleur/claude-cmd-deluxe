@@ -1,0 +1,16 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    # macOS only: that is where the plugin is used. zsh ships with macOS; glow comes from Homebrew.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install glow
+        run: brew install glow
+      - name: Run tests
+        run: zsh tests/run.zsh
