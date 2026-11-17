@@ -17,6 +17,9 @@
 : ${CLAUDE_CMD_MODEL:=haiku}
 : ${CLAUDE_CMD_LANG:=English}
 : ${CLAUDE_CMD_GLOW_STYLE:=dark}
+# Base colour of everything ccd shows under the line (a region_highlight spec; glow's own colours go on top),
+# so it reads as ccd's and not as output. Empty: the terminal's default colour.
+: ${CLAUDE_CMD_BOTTOM_STYLE=fg=244}
 : ${CLAUDE_CMD_PREFS:=${XDG_CONFIG_HOME:-$HOME/.config}/claude-cmd/prefs.md}
 : ${CLAUDE_CMD_CACHE:=${XDG_CACHE_HOME:-$HOME/.cache}/claude-cmd}
 # Ghostty sends ⌃; and ⌃⇧; as kitty-keyboard sequences (ESC [ 59 ; 5 u and ESC [ 59 ; 6 u). There ccd uses
@@ -335,9 +338,12 @@ _cc_bar() {
   _cc_ansi_parse "$1"
   _cc_spans=()
   if [[ -n $REPLY ]]; then
-    POSTDISPLAY=$'\n'$REPLY
-    for s in $reply; do      # +1 for the newline in front
-      s=(${=s}); _cc_spans+=("$(( s[1] + 1 )) $(( s[2] + 1 )) ${s[3]}")
+    # a blank line between the command line and ccd's text
+    POSTDISPLAY=$'\n\n'$REPLY
+    # first the base colour over the whole text, then glow's colours, which win because they come later
+    [[ -n $CLAUDE_CMD_BOTTOM_STYLE ]] && _cc_spans+=("2 $(( ${#REPLY} + 2 )) $CLAUDE_CMD_BOTTOM_STYLE")
+    for s in $reply; do      # +2 for the two newlines in front
+      s=(${=s}); _cc_spans+=("$(( s[1] + 2 )) $(( s[2] + 2 )) ${s[3]}")
     done
   else
     POSTDISPLAY=""
@@ -425,7 +431,7 @@ ccd-explain() {
   local text=$(print -r -- "$_cc_expl_md" | _cc_render)
   # Taller than the screen: zle would cut it off without a way to scroll, so show what fits and point to the pager
   local -a lines=( "${(@f)text}" )
-  local room=$(( ${LINES:-24} - 4 ))
+  local room=$(( ${LINES:-24} - 5 ))   # the prompt line, the blank line, and some margin
   if (( ${#lines} > room )); then
     local more="ccd-page"
     [[ -n $CLAUDE_CMD_KEY_MENU ]] && more="$(_cc_keylabel $CLAUDE_CMD_KEY_MENU) E"
