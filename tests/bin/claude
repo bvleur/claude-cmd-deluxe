@@ -1,0 +1,27 @@
+#!/usr/bin/env zsh
+# Fake `claude` CLI for the tests: records its arguments and stdin, answers with a fixture.
+# $CC_TEST_DIR is set by tests/lib.zsh. A test can force an answer by writing $CC_TEST_DIR/answer,
+# or simulate a failure by writing $CC_TEST_DIR/fail (its contents go to stderr, exit 1).
+print -rl -- "$@" >| $CC_TEST_DIR/claude-args
+cat >| $CC_TEST_DIR/claude-stdin
+if [[ -e $CC_TEST_DIR/fail ]]; then
+  cat $CC_TEST_DIR/fail >&2
+  exit 1
+fi
+if [[ -e $CC_TEST_DIR/answer ]]; then
+  cat $CC_TEST_DIR/answer
+elif [[ "$*" == *"EXACTLY 3 alternatives"* ]]; then
+  # The commands print ALT-101/102/103 when run; the arithmetic keeps the command text itself different
+  print -r -- '@@@ first label
+echo ALT-$((100+1))
+@@@ second label
+echo ALT-$((100+2))
+@@@ third label
+echo ALT-$((100+3))'
+else
+  print -r -- 'Prints the word hi.
+
+| Part | Meaning |
+|---|---|
+| `echo` | prints its arguments |'
+fi
