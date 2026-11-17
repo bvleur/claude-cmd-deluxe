@@ -111,11 +111,15 @@ assert_eq 0 ${#reply}
 
 # ── prompts and the call to claude ────────────────────────────────────────────
 
-test_case "explain prompt asks for a table in the configured language"
+test_case "explain prompt: tables in the configured language, one per step of a compound command"
 p=$(CLAUDE_CMD_LANG=Dutch; _cc_sys_explain)
 assert_contains "$p" 'in Dutch'
-assert_contains "$p" 'ONE markdown table'
-assert_contains "$p" 'No nested lists, no arrows.'
+assert_contains "$p" 'into Dutch'
+assert_contains "$p" 'split it into steps at every &&, ||, ; and |'
+assert_contains "$p" 'Operators never get a row.'
+assert_contains "$p" "'I expect output like:'"
+assert_contains "$p" '```text'
+assert_contains "$p" 'no nested lists, no arrows'
 assert_contains "$p" 'as \| so it'
 assert_contains "$p" '```sh'
 
