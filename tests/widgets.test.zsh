@@ -175,17 +175,20 @@ pty_start PATH="$CC_ROOT/tests/glow-ansi-bin:$PATH"
 pty_send "echo hi$CTRL_X_E"
 assert_true "no explanation: $STATE_BOTTOM" pty_wait_bottom 'Explained: Prints the word hi'
 assert_not_contains "$STATE_BOTTOM" $'\e' 'escape codes in the bottom area'
-# BUFFER "echo hi" is 7 characters, the bottom area starts with a newline: "Explained" is at 8..17
-assert_contains "|$STATE_HL|" '|8 17 fg=203,bold|'
+# BUFFER "echo hi" is 7 characters, the bottom area starts with two newlines: "Explained" is at 9..18
+assert_contains "|$STATE_HL|" '|9 18 fg=203,bold|'
+assert_contains "$STATE_HL" '9 ' 'no base colour'
+assert_true "base colour comes before glow's colour" eval '[[ $STATE_HL == *"fg=244"*"fg=203,bold"* ]]'
 pty_send " there"
 pty_state
 assert_eq 'echo hi there' "$STATE_BUFFER"
 assert_contains "$STATE_BOTTOM" 'Explained: Prints the word hi' 'explanation gone while typing'
-assert_contains "|$STATE_HL|" '|14 23 fg=203,bold|' 'highlight did not move along'
-assert_not_contains "|$STATE_HL|" '|8 17 ' 'old highlight left behind'
+assert_contains "|$STATE_HL|" '|15 24 fg=203,bold|' 'highlight did not move along'
+assert_not_contains "|$STATE_HL|" '|9 18 ' 'old highlight left behind'
 run '' 'hi there'
 pty_state
 assert_eq '' "$STATE_BOTTOM"
 assert_not_contains "$STATE_HL" 'fg=203' 'highlight left after the line was accepted'
+assert_not_contains "$STATE_HL" 'fg=244' 'base colour left after the line was accepted'
 
 finish
