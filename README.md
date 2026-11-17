@@ -22,6 +22,8 @@ Helper commands:
 - `claude-cmd-context`: show exactly what context Claude receives.
 - `claude-cmd-refresh`: refresh the cached list of installed Homebrew packages.
 
+Every public function has a `#: description` line above it. If you have a `help` command that collects those lines from the files in a `HELP_SOURCES` array, declare the array (`typeset -ga HELP_SOURCES`) before loading the plugin and the plugin adds itself to it.
+
 ## Install
 
 Requirements: zsh, the [Claude CLI](https://docs.claude.com/en/docs/claude-code) (`claude`) on `PATH`, and optionally `glow` for coloured explanations. Without `claude` the plugin does nothing; without `glow` explanations are printed as plain markdown.

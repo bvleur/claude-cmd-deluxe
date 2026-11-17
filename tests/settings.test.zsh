@@ -26,6 +26,13 @@ test_case "defaults"
 out=$(load '' '' 'print -r -- "$CLAUDE_CMD_MODEL $CLAUDE_CMD_LANG $CLAUDE_CMD_GLOW_STYLE"')
 assert_eq 'haiku English dark' "$out"
 
+test_case "the plugin adds itself to HELP_SOURCES only when that array exists"
+out=$(load '' 'typeset -ga HELP_SOURCES=(/x.zsh)' 'print -rl -- $HELP_SOURCES')
+assert_eq "/x.zsh
+${CC_PLUGIN:A}" "$out"
+out=$(load '' '' 'print -r -- "SET=${+HELP_SOURCES}"')
+assert_eq 'SET=0' "$out"
+
 test_case "without claude on PATH the plugin does nothing"
 out=$(PATH=/usr/bin:/bin; load '' '' 'print -r -- "W=${+functions[claude-cmd-generate]}"; bindkey "^G"')
 assert_contains "$out" 'W=0'
