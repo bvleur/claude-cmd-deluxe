@@ -12,7 +12,7 @@ run() { pty_reset; pty_send "$1$ENTER"; pty_expect "${2:-}*PROMPT> " }
 test_case "⌃G turns text into the first alternative, with the info bar"
 pty_start
 pty_send "list files$CTRL_G"
-assert_true "info bar not shown: $STATE_BOTTOM" pty_wait_bottom 'claude 1/3 · first label'
+assert_true "info bar not shown: $STATE_BOTTOM" pty_wait_bottom 'ccd 1/3 · first label'
 assert_eq 'echo ALT-$((100+1))' "$STATE_BUFFER"
 assert_contains "$STATE_BOTTOM" '⌃G next'
 stdin=$(<$CC_TEST_DIR/claude-stdin)
@@ -23,23 +23,23 @@ assert_contains "$(pty_text)" 'ALT-101'
 
 test_case "⌃G again cycles through the alternatives, locally"
 pty_start
-pty_send "x$CTRL_G"; pty_wait_bottom 'claude 1/3'
+pty_send "x$CTRL_G"; pty_wait_bottom 'ccd 1/3'
 rm -f $CC_TEST_DIR/claude-args
 pty_send $CTRL_G
-assert_true "no 2/3: $STATE_BOTTOM" pty_wait_bottom 'claude 2/3 · second label'
+assert_true "no 2/3: $STATE_BOTTOM" pty_wait_bottom 'ccd 2/3 · second label'
 assert_eq 'echo ALT-$((100+2))' "$STATE_BUFFER"
 pty_send $CTRL_G
-assert_true "no 3/3: $STATE_BOTTOM" pty_wait_bottom 'claude 3/3 · third label'
+assert_true "no 3/3: $STATE_BOTTOM" pty_wait_bottom 'ccd 3/3 · third label'
 pty_send $CTRL_G
-assert_true "no wrap to 1/3: $STATE_BOTTOM" pty_wait_bottom 'claude 1/3'
+assert_true "no wrap to 1/3: $STATE_BOTTOM" pty_wait_bottom 'ccd 1/3'
 assert_true "cycling called claude again" test ! -e $CC_TEST_DIR/claude-args
 
 test_case "⌃G after editing the line asks claude again"
 pty_start
-pty_send "x$CTRL_G"; pty_wait_bottom 'claude 1/3'
+pty_send "x$CTRL_G"; pty_wait_bottom 'ccd 1/3'
 rm -f $CC_TEST_DIR/claude-args
 pty_send " # use printf$CTRL_G"
-pty_wait_bottom 'claude 1/3'
+pty_wait_bottom 'ccd 1/3'
 sleep 0.3
 assert_true "claude not called for the edited line" test -e $CC_TEST_DIR/claude-args
 assert_contains "$(<$CC_TEST_DIR/claude-stdin)" 'echo ALT-$((100+1)) # use printf'
@@ -61,7 +61,7 @@ test_case "a failing claude shows its error and leaves the line alone"
 print -r -- 'boom' >| $CC_TEST_DIR/fail
 pty_start
 pty_send "x$CTRL_G"
-assert_true "no error shown: $STATE_BOTTOM" pty_wait_bottom 'claude: no usable answer — boom'
+assert_true "no error shown: $STATE_BOTTOM" pty_wait_bottom 'ccd: no usable answer — boom'
 assert_eq 'x' "$STATE_BUFFER"
 
 test_case "⌃X e shows the explanation under the line and leaves the line alone"
@@ -85,7 +85,7 @@ test_case "⌃X f fixes the previous command with its exit status and the typed 
 pty_start
 run 'false'
 pty_send "oops$CTRL_X_F"
-assert_true "no alternative: $STATE_BOTTOM" pty_wait_bottom 'claude 1/3'
+assert_true "no alternative: $STATE_BOTTOM" pty_wait_bottom 'ccd 1/3'
 assert_eq 'echo ALT-$((100+1))' "$STATE_BUFFER"
 stdin=$(<$CC_TEST_DIR/claude-stdin)
 assert_contains "$stdin" $'(exit status 1):\nfalse'
@@ -93,20 +93,76 @@ assert_contains "$stdin" 'User hint about what went wrong: oops'
 
 test_case "the bottom area is cleared when the line is accepted"
 pty_start
-pty_send "x$CTRL_G"; pty_wait_bottom 'claude 1/3'
+pty_send "x$CTRL_G"; pty_wait_bottom 'ccd 1/3'
 run '' 'ALT-101'
 pty_state
 assert_eq '' "$STATE_BOTTOM"
 
-test_case "Ghostty: ⌃; explains, ⌃⇧; shows the key overview"
+test_case "Ghostty: ⌃; generates and cycles"
 pty_start TERM_PROGRAM=ghostty
-pty_send "echo hi$GHOSTTY_CTRL_SEMI"
-assert_true "⌃; did not explain: $STATE_BOTTOM" pty_wait_bottom 'Prints the word hi'
-pty_send $GHOSTTY_CTRL_SHIFT_SEMI
-assert_true "⌃⇧; did not show help: $STATE_BOTTOM" pty_wait_bottom '| Key | What |'
-assert_contains "$STATE_BOTTOM" '| `⌃⇧;` | This overview. |'
-assert_contains "$STATE_BOTTOM" '| `⌃;` | Explain'
+pty_send "list files$GHOSTTY_CTRL_SEMI"
+assert_true "no info bar: $STATE_BOTTOM" pty_wait_bottom 'ccd 1/3 · first label'
+assert_contains "$STATE_BOTTOM" '⌃; next   ⌃⇧; menu'
+pty_send $GHOSTTY_CTRL_SEMI
+assert_true "no 2/3: $STATE_BOTTOM" pty_wait_bottom 'ccd 2/3'
+
+test_case "Ghostty: ⌃⇧; shows the menu, e explains"
+pty_start TERM_PROGRAM=ghostty
+pty_send "echo hi$GHOSTTY_CTRL_SHIFT_SEMI"
+assert_true "no menu: $STATE_BOTTOM" pty_expect '*pick one*'
+pty_send e
+assert_true "e did not explain: $STATE_BOTTOM" pty_wait_bottom 'Prints the word hi'
 assert_eq 'echo hi' "$STATE_BUFFER"
+
+test_case "Ghostty: ⌃⇧; h shows the overview, another key just closes the menu"
+pty_start TERM_PROGRAM=ghostty
+pty_send "echo hi$GHOSTTY_CTRL_SHIFT_SEMI"; pty_expect '*pick one*'
+pty_send h
+assert_true "h did not show help: $STATE_BOTTOM" pty_wait_bottom '| Key | What |'
+assert_contains "$STATE_BOTTOM" '| `⌃⇧;` `e` | Explain'
+assert_eq 'echo hi' "$STATE_BUFFER"
+pty_send "$GHOSTTY_CTRL_SHIFT_SEMI"; pty_expect '*pick one*'
+pty_send x
+pty_state
+assert_eq 'echo hi' "$STATE_BUFFER" 'the closing key was typed into the line'
+assert_eq '' "$STATE_BOTTOM" 'menu still shown'
+
+test_case "Ghostty: ⌃: (how Ghostty may send ⌃⇧;) opens the menu too"
+pty_start TERM_PROGRAM=ghostty
+pty_send $'echo hi\e[58;5u'
+assert_true "no menu" pty_expect '*pick one*'
+pty_send x
+
+test_case "Ghostty: ⌃⇧; c runs ccd-context and gives the line back"
+pty_start TERM_PROGRAM=ghostty
+pty_send "echo hi$GHOSTTY_CTRL_SHIFT_SEMI"; pty_expect '*pick one*'
+pty_reset
+pty_send c
+assert_true "context not printed" pty_expect '*User preferences:*PROMPT> '
+pty_state
+assert_eq 'echo hi' "$STATE_BUFFER" 'line not given back'
+
+test_case "Ghostty: a long explanation is cut off with a pointer to ⌃⇧; E, which pages it without a new call"
+pty_start TERM_PROGRAM=ghostty PAGER=cat
+print -rl -- "Long one." "" row\ {1..60} >| $CC_TEST_DIR/answer
+pty_send "echo hi$GHOSTTY_CTRL_SHIFT_SEMI"; pty_expect '*pick one*'
+pty_send e
+assert_true "no cut-off hint: $STATE_BOTTOM" pty_wait_bottom 'more lines: ⌃⇧; E for the full explanation'
+assert_contains "$STATE_BOTTOM" 'row 1'
+assert_not_contains "$STATE_BOTTOM" 'row 60'
+rm -f $CC_TEST_DIR/claude-args
+pty_reset
+pty_send "$GHOSTTY_CTRL_SHIFT_SEMI"; pty_expect '*pick one*'
+pty_send E
+assert_true "pager did not show the whole explanation" pty_expect "*row 60*"
+assert_true "the explanation was asked again" test ! -e $CC_TEST_DIR/claude-args
+pty_state
+assert_eq 'echo hi' "$STATE_BUFFER"
+rm -f $CC_TEST_DIR/answer
+
+test_case "ccd-page: the last explanation, or a message when there is none"
+pty_start
+run ccd-page 'no explanation yet'
 
 test_case "explanations go through glow when it is installed"
 pty_start PATH="$CC_ROOT/tests/glow-bin:$PATH"

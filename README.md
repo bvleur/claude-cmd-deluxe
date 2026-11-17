@@ -4,25 +4,38 @@ A zsh plugin that turns text into a shell command, modifies an existing command,
 
 ## Keys
 
+In [Ghostty](https://ghostty.org) all of ccd sits on two keys:
+
 | Key | What |
 |---|---|
-| `⌃G` | Generate 3 alternatives from the text on the line; the best one replaces the line. Modify an existing command with `command # instruction`. |
-| `⌃G` (again) | Cycle through the 3 alternatives, locally, without a new call. |
-| `⌃;` (Ghostty) / `⌃X e` | Explain the command on the line (empty line: the previous command): one sentence, then a table with a row per part, rendered in colour with [glow](https://github.com/charmbracelet/glow) under the line. A compound command (`&&`, `||`, `;`, `|`) gets a small table per step, with a line in between saying what the operator does and what output to expect. The line stays as it is, and you can keep typing. |
-| `⌃X f` | Fix the previous command, with its exit status as context. Optionally type a hint first (e.g. the error message). |
-| `⌃⇧;` (Ghostty) | Show the key overview. No model call. Elsewhere: run `claude-cmd-help`. |
-| `⌃_` | Undo (standard zle undo). |
+| `⌃;` | Generate 3 alternatives from the text on the line; the best one replaces the line. Modify an existing command with `command # instruction`. |
+| `⌃;` (again) | Cycle through the 3 alternatives, locally, without a new call. |
+| `⌃⇧;` | Menu: the options appear under the line, the next key picks one. Any other key closes it. |
+| `⌃⇧;` `e` | Explain the command on the line (empty line: the previous command): one sentence, then a table with a row per part, rendered in colour with [glow](https://github.com/charmbracelet/glow) under the line. A compound command (`&&`, `\|\|`, `;`, `\|`) gets a small table per step, with a line in between saying what the operator does and what output to expect. The line stays as it is, and you can keep typing. |
+| `⌃⇧;` `E` | The same explanation in a pager (`$PAGER`, default `less -R`), to scroll through a long one. Reuses the last explanation of the same command, without a new call. An inline explanation taller than the screen is cut off with a line pointing here. |
+| `⌃⇧;` `f` | Fix the previous command, with its exit status as context. Optionally type a hint first (e.g. the error message). |
+| `⌃⇧;` `h` | All keys and commands. No model call. |
+| `⌃⇧;` `p` / `c` / `r` | Run `ccd-prefs`, `ccd-context` or `ccd-refresh`; your line comes back afterwards. |
 
-Ghostty sends `⌃;` and `⌃⇧;` as `ESC [ 59 ; 5 u` and `ESC [ 59 ; 6 u` (kitty keyboard protocol). Other terminals, such as Terminal.app, send nothing for them, so there the plugin uses `⌃X e` and has no help key. All keys are configurable.
+Ghostty sends `⌃;` and `⌃⇧;` as `ESC [ 59 ; 5 u` and `ESC [ 59 ; 6 u` (kitty keyboard protocol). Because `⌃⇧;` types `:` on most layouts, the plugin also binds the spellings of `⌃:` for the menu. Other terminals, such as Terminal.app, send nothing for these keys, so there the plugin falls back to:
+
+| Key | What |
+|---|---|
+| `⌃G` | Generate; again: next alternative. |
+| `⌃X e` | Explain. |
+| `⌃X f` | Fix the previous command. |
+
+`⌃_` undoes (standard zle undo). All keys are configurable.
 
 Helper commands:
 
-- `claude-cmd-help`: the key overview.
-- `claude-cmd-prefs`: edit your preferences (through `chezmoi edit --apply` when chezmoi manages the file).
-- `claude-cmd-context`: show exactly what context Claude receives.
-- `claude-cmd-refresh`: refresh the cached list of installed Homebrew packages.
+- `ccd-help`: all keys and commands.
+- `ccd-prefs`: edit your preferences (through `chezmoi edit --apply` when chezmoi manages the file).
+- `ccd-page`: the last explanation in a pager (the way to scroll outside Ghostty).
+- `ccd-context`: show exactly what context Claude receives.
+- `ccd-refresh`: refresh the cached list of installed Homebrew packages.
 
-Every public function has a `#: description` line above it. If you have a `help` command that collects those lines from the files in a `HELP_SOURCES` array, declare the array (`typeset -ga HELP_SOURCES`) before loading the plugin and the plugin adds itself to it.
+Every public function has a `#: [ccd] description` line above it (`[ccd, more]` for the ones you rarely type). If you have a `help` command that collects those lines from the files in a `HELP_SOURCES` array, declare the array (`typeset -ga HELP_SOURCES`) before loading the plugin and the plugin adds itself to it.
 
 ## Install
 
@@ -54,10 +67,10 @@ Set these before the plugin is loaded.
 | `CLAUDE_CMD_GLOW_STYLE` | `dark` |
 | `CLAUDE_CMD_PREFS` | `~/.config/claude-cmd/prefs.md` |
 | `CLAUDE_CMD_CACHE` | `~/.cache/claude-cmd` (cached `brew leaves`, the last error message) |
-| `CLAUDE_CMD_KEY_GEN` | `^G` |
-| `CLAUDE_CMD_KEY_EXPLAIN` | `$'\e[59;5u'` (`⌃;`) in Ghostty, `^Xe` elsewhere |
-| `CLAUDE_CMD_KEY_FIX` | `^Xf` |
-| `CLAUDE_CMD_KEY_HELP` | `$'\e[59;6u'` (`⌃⇧;`) in Ghostty, empty (no key) elsewhere |
+| `CLAUDE_CMD_KEY_GEN` | `$'\e[59;5u'` (`⌃;`) in Ghostty, `^G` elsewhere |
+| `CLAUDE_CMD_KEY_MENU` | `$'\e[59;6u'` (`⌃⇧;`) in Ghostty, empty (no menu) elsewhere |
+| `CLAUDE_CMD_KEY_EXPLAIN` | empty in Ghostty (use the menu), `^Xe` elsewhere |
+| `CLAUDE_CMD_KEY_FIX` | empty in Ghostty (use the menu), `^Xf` elsewhere |
 | `CLAUDE_CMD_CANDIDATES` | array of binaries to look for on `PATH` and mention as installed |
 
 ## How it works

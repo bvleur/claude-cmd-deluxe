@@ -54,6 +54,7 @@ assert_eq '⌃X e' "$(_cc_keylabel '^Xe')"
 assert_eq '⌥F'   "$(_cc_keylabel '^[f')"
 assert_eq '⌃;'   "$(_cc_keylabel $'\e[59;5u')"
 assert_eq '⌃⇧;'  "$(_cc_keylabel $'\e[59;6u')"
+assert_eq '⌃⇧;'  "$(_cc_keylabel $'\e[58;5u')" 'Ghostty can report ⌃⇧; as ⌃:'
 
 # ── markdown rendering ────────────────────────────────────────────────────────
 
@@ -138,7 +139,7 @@ test_case "call: stderr is kept for the error message"
 print -r -- 'gateway said no' >| $CC_TEST_DIR/fail
 out=$(_cc_call x y)
 assert_eq '' "$out"
-assert_eq 'claude: no usable answer — gateway said no' "$(_cc_error_msg)"
+assert_eq 'ccd: no usable answer — gateway said no' "$(_cc_error_msg)"
 
 # ── context ───────────────────────────────────────────────────────────────────
 
@@ -151,11 +152,34 @@ assert_contains "$(_cc_context)" "Current directory: $PWD"
 
 # ── help ──────────────────────────────────────────────────────────────────────
 
-test_case "help: lists the configured keys, without a help row when there is no help key"
-out=$(claude-cmd-help)
+test_case "help: lists the configured keys, without menu rows when there is no menu key"
+out=$(ccd-help)
 assert_contains "$out" '| `⌃G` | Turn the text'
 assert_contains "$out" '| `⌃X e` | Explain'
 assert_contains "$out" '| `⌃X f` | Fix'
-assert_not_contains "$out" 'This overview'
+assert_not_contains "$out" 'Menu'
+assert_contains "$out" 'Commands: `ccd-help`, `ccd-prefs`'
+
+test_case "help: with a menu key, a row per menu option and no direct explain/fix rows when unset"
+out=$(CLAUDE_CMD_KEY_GEN=$'\e[59;5u' CLAUDE_CMD_KEY_MENU=$'\e[59;6u' CLAUDE_CMD_KEY_EXPLAIN= CLAUDE_CMD_KEY_FIX= ccd-help)
+assert_contains "$out" '| `⌃;` | Turn the text'
+assert_contains "$out" '| `⌃⇧;` | Menu'
+assert_contains "$out" '| `⌃⇧;` `e` | Explain the command'
+assert_contains "$out" '| `⌃⇧;` `f` | Fix the previous command'
+assert_contains "$out" '| `⌃⇧;` `h` | All keys and commands. |'
+assert_not_contains "$out" '⌃X'
+
+test_case "menu text: one line per option"
+out=$(_cc_menu_text)
+assert_contains "$out" 'ccd ─ pick one'
+assert_contains "$out" $'\n  e  explain the command'
+assert_contains "$out" $'\n  r  refresh the list'
+
+test_case "info bar hints: only keys that are bound"
+assert_eq '⌃G generate   ⌃X e explain   ⌃X f fix previous   ⌃_ undo' "$(_cc_hints)"
+assert_eq '⌃; next   ⌃⇧; menu   ⌃_ undo' "$(CLAUDE_CMD_KEY_GEN=$'\e[59;5u' CLAUDE_CMD_KEY_MENU=$'\e[59;6u' CLAUDE_CMD_KEY_EXPLAIN= CLAUDE_CMD_KEY_FIX= _cc_hints next)"
+
+test_case "#: lines carry a [ccd] category for a help command"
+assert_eq 0 "$(grep -A1 '^#:' $CC_PLUGIN | grep -c '^#: [^[]')" 'a #: line without a category'
 
 finish

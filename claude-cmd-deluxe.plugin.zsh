@@ -1,11 +1,13 @@
 # claude-cmd-deluxe — text → zsh command via the Claude CLI (`claude -p`, so it uses the CLI's own gateway config)
 #
-#   ⌃G         generate, or modify an existing command with "command # instruction"
-#   ⌃G         again: cycle through the 3 alternatives (no new call)
-#   ⌃; / ⌃X e  explain the command in the buffer (⌃; in Ghostty; empty buffer: the previous command)
-#   ⌃X f       fix the previous command (optionally type a hint first, e.g. the error message)
-#   ⌃⇧;        show the key overview (Ghostty; elsewhere run claude-cmd-help)
-#   ⌃_         undo (standard zle undo)
+#   Ghostty (all of ccd on two keys):
+#     ⌃;         generate, or modify an existing command with "command # instruction"; again: next alternative
+#     ⌃⇧;        menu: shows the options, then one letter picks one (e explain, f fix, h help, p prefs, …)
+#   Other terminals (they send nothing for ⌃;):
+#     ⌃G         generate / next alternative
+#     ⌃X e       explain the command on the line (empty line: the previous command)
+#     ⌃X f       fix the previous command (optionally type a hint first, e.g. the error message)
+#   ⌃_           undo (standard zle undo)
 #
 # Load it after your other plugins so its key bindings win. Every setting below can be overridden by setting
 # the variable before the plugin is loaded. Features and design decisions: README.md.
@@ -17,19 +19,19 @@
 : ${CLAUDE_CMD_GLOW_STYLE:=dark}
 : ${CLAUDE_CMD_PREFS:=${XDG_CONFIG_HOME:-$HOME/.config}/claude-cmd/prefs.md}
 : ${CLAUDE_CMD_CACHE:=${XDG_CACHE_HOME:-$HOME/.cache}/claude-cmd}
-: ${CLAUDE_CMD_KEY_GEN:='^G'}
-# Ghostty sends ⌃; as the kitty-keyboard sequence ESC [ 59 ; 5 u (Terminal.app sends nothing for it),
-# so the explain key is ⌃; there and ⌃X e everywhere else.
+# Ghostty sends ⌃; and ⌃⇧; as kitty-keyboard sequences (ESC [ 59 ; 5 u and ESC [ 59 ; 6 u). There ccd uses
+# only those two keys: ⌃; generates, ⌃⇧; opens the menu. Other terminals send nothing for them, so there ccd
+# falls back to ⌃G, ⌃X e and ⌃X f, without a menu. An empty key setting means: not bound.
 if [[ $TERM_PROGRAM == ghostty ]]; then
-  : ${CLAUDE_CMD_KEY_EXPLAIN:=$'\e[59;5u'}
+  : ${CLAUDE_CMD_KEY_GEN:=$'\e[59;5u'}
+  : ${CLAUDE_CMD_KEY_MENU:=$'\e[59;6u'}
+  : ${CLAUDE_CMD_KEY_EXPLAIN:=}
+  : ${CLAUDE_CMD_KEY_FIX:=}
 else
+  : ${CLAUDE_CMD_KEY_GEN:='^G'}
+  : ${CLAUDE_CMD_KEY_MENU:=}
   : ${CLAUDE_CMD_KEY_EXPLAIN:='^Xe'}
-fi
-: ${CLAUDE_CMD_KEY_FIX:='^Xf'}
-if [[ $TERM_PROGRAM == ghostty ]]; then
-  : ${CLAUDE_CMD_KEY_HELP:=$'\e[59;6u'}
-else
-  : ${CLAUDE_CMD_KEY_HELP:=}   # empty: no key, use the claude-cmd-help command
+  : ${CLAUDE_CMD_KEY_FIX:='^Xf'}
 fi
 # Binaries checked individually, next to `brew leaves` (which gives package names, not binaries)
 (( ${+CLAUDE_CMD_CANDIDATES} )) || typeset -ga CLAUDE_CMD_CANDIDATES=(
@@ -153,7 +155,7 @@ _cc_error_msg() {
   local -a errlines
   [[ -r $CLAUDE_CMD_CACHE/last-error ]] && errlines=( ${(f)"$(<$CLAUDE_CMD_CACHE/last-error)"} )
   local err=${errlines[1]}
-  print -rn -- "claude: no usable answer${err:+ — $err}"
+  print -rn -- "ccd: no usable answer${err:+ — $err}"
 }
 
 # Parse "@@@ label\ncommand…" blocks into _cc_alts / _cc_labels
@@ -213,7 +215,7 @@ _cc_keylabel() {
   local k=$1 r
   if [[ $k == $'\e[59;5u' ]]; then
     print -rn -- '⌃;'
-  elif [[ $k == $'\e[59;6u' ]]; then
+  elif [[ $k == ($'\e[59;6u'|$'\e[58;5u'|$'\e[58;6u') ]]; then
     print -rn -- '⌃⇧;'
   elif [[ $k == '^['?* ]]; then
     print -rn -- "⌥${(U)k[3,-1]}"
@@ -225,7 +227,12 @@ _cc_keylabel() {
 }
 
 _cc_hints() {  # $1 = label for the generate key
-  print -rn -- "$(_cc_keylabel $CLAUDE_CMD_KEY_GEN) ${1:-generate}   $(_cc_keylabel $CLAUDE_CMD_KEY_EXPLAIN) explain   $(_cc_keylabel $CLAUDE_CMD_KEY_FIX) fix previous   ⌃_ undo"
+  local -a h=( "$(_cc_keylabel $CLAUDE_CMD_KEY_GEN) ${1:-generate}" )
+  [[ -n $CLAUDE_CMD_KEY_MENU ]] && h+=( "$(_cc_keylabel $CLAUDE_CMD_KEY_MENU) menu" )
+  [[ -n $CLAUDE_CMD_KEY_EXPLAIN ]] && h+=( "$(_cc_keylabel $CLAUDE_CMD_KEY_EXPLAIN) explain" )
+  [[ -n $CLAUDE_CMD_KEY_FIX ]] && h+=( "$(_cc_keylabel $CLAUDE_CMD_KEY_FIX) fix previous" )
+  h+=( "⌃_ undo" )
+  print -rn -- "${(pj:   :)h}"
 }
 
 _cc_is_destructive() {
@@ -370,11 +377,11 @@ _cc_show() {
   local warn="" label=${_cc_labels[_cc_idx]}
   _cc_is_destructive "$BUFFER" && warn="⚠ destructive — read carefully before you press Enter
 "
-  _cc_bar "${warn}✦ claude ${_cc_idx}/${#_cc_alts}${label:+ · $label}   │   $(_cc_hints next)"
+  _cc_bar "${warn}✦ ccd ${_cc_idx}/${#_cc_alts}${label:+ · $label}   │   $(_cc_hints next)"
 }
 
 _cc_busy() {
-  _cc_bar "⏳ claude ($CLAUDE_CMD_MODEL) $1…"
+  _cc_bar "⏳ ccd ($CLAUDE_CMD_MODEL) $1…"
 }
 
 # ── widgets ──────────────────────────────────────────────────────────────────
@@ -395,8 +402,8 @@ $1")
   _cc_show
 }
 
-#: zle widget (⌃G): turn the typed description into a command, repeat to cycle alternatives
-claude-cmd-generate() {
+#: [ccd, more] zle widget (⌃; in Ghostty, ⌃G elsewhere): turn the typed text into a command; again: next alternative
+ccd-generate() {
   # Cycle: the buffer is still exactly the current alternative
   if (( ${#_cc_alts} > 1 && _cc_idx )) && [[ $BUFFER == ${_cc_alts[_cc_idx]} ]]; then
     _cc_idx=$(( _cc_idx % ${#_cc_alts} + 1 ))
@@ -404,7 +411,7 @@ claude-cmd-generate() {
     return
   fi
   if [[ -z ${BUFFER//[[:space:]]/} ]]; then
-    _cc_bar "claude: first type what you want to do   │   $(_cc_hints)"
+    _cc_bar "ccd: first type what you want to do   │   $(_cc_hints)"
     return
   fi
   _cc_busy "thinking"
@@ -412,14 +419,32 @@ claude-cmd-generate() {
 $BUFFER"
 }
 
-#: zle widget (⌃; in Ghostty, ⌃X e elsewhere): explain the command on the line, or the previous one
-claude-cmd-explain() {
+#: [ccd, more] zle widget (⌃⇧; e in Ghostty, ⌃X e elsewhere): explain the command on the line, or the previous one
+ccd-explain() {
+  _cc_explain_fetch || return
+  local text=$(print -r -- "$_cc_expl_md" | _cc_render)
+  # Taller than the screen: zle would cut it off without a way to scroll, so show what fits and point to the pager
+  local -a lines=( "${(@f)text}" )
+  local room=$(( ${LINES:-24} - 4 ))
+  if (( ${#lines} > room )); then
+    local more="ccd-page"
+    [[ -n $CLAUDE_CMD_KEY_MENU ]] && more="$(_cc_keylabel $CLAUDE_CMD_KEY_MENU) E"
+    text="${(pj:\n:)lines[1,room-1]}"$'\n'"… $(( ${#lines} - room + 1 )) more lines: $more for the full explanation"
+  fi
+  _cc_bar "$text"
+}
+
+# The explanation for the line (empty: the previous command) into _cc_expl_md, from a model call or, for the
+# same command as last time, from memory. Returns 1 (after showing why) when there is nothing to show.
+typeset -g _cc_expl_target _cc_expl_md
+_cc_explain_fetch() {
   local target=$BUFFER
   [[ -z ${target//[[:space:]]/} ]] && target=${history[$(( HISTCMD - 1 ))]}
   if [[ -z $target ]]; then
-    _cc_bar "claude: nothing to explain"
-    return
+    _cc_bar "ccd: nothing to explain"
+    return 1
   fi
+  [[ $target == $_cc_expl_target && -n $_cc_expl_md ]] && return 0
   _cc_busy "explaining"
   local out
   out=$(_cc_call "$(_cc_sys_explain)" "<context>
@@ -430,16 +455,32 @@ Command:
 $target")
   if [[ -z ${out//[[:space:]]/} ]]; then
     _cc_bar "$(_cc_error_msg)"
-  else
-    _cc_bar "$(print -r -- "$out" | _cc_render)"
+    return 1
   fi
+  _cc_expl_target=$target _cc_expl_md=$out
 }
 
-#: zle widget (⌃X f): fix the previous failed command
-claude-cmd-fix() {
+#: [ccd, more] zle widget (⌃⇧; E in Ghostty): explain the command on the line in a pager
+ccd-explain-paged() {
+  _cc_explain_fetch || return
+  _cc_bar ""
+  _cc_run ccd-page
+}
+
+#: [ccd, more] show the last explanation in a pager
+ccd-page() {
+  if [[ -z $_cc_expl_md ]]; then
+    print -u2 -r -- "ccd: no explanation yet"
+    return 1
+  fi
+  print -r -- "$_cc_expl_md" | _cc_render | LESS="-R ${LESS-}" ${=PAGER:-less}
+}
+
+#: [ccd, more] zle widget (⌃⇧; f in Ghostty, ⌃X f elsewhere): fix the previous failed command
+ccd-fix() {
   local last=${history[$(( HISTCMD - 1 ))]}
   if [[ -z $last ]]; then
-    _cc_bar "claude: no previous command found"
+    _cc_bar "ccd: no previous command found"
     return
   fi
   local hint=${BUFFER//[[:space:]]/}
@@ -454,18 +495,81 @@ User hint about what went wrong: ${hint:-none}"
 _cc_precmd() { _cc_last_status=$? }
 precmd_functions=(_cc_precmd ${precmd_functions:#_cc_precmd})
 
-zle -N claude-cmd-generate
-zle -N claude-cmd-explain
-zle -N claude-cmd-fix
-bindkey "$CLAUDE_CMD_KEY_GEN" claude-cmd-generate
-bindkey "$CLAUDE_CMD_KEY_EXPLAIN" claude-cmd-explain
-bindkey "$CLAUDE_CMD_KEY_FIX" claude-cmd-fix
-[[ -n $CLAUDE_CMD_KEY_HELP ]] && { zle -N claude-cmd-help-widget; bindkey "$CLAUDE_CMD_KEY_HELP" claude-cmd-help-widget; }
+zle -N ccd-generate
+zle -N ccd-explain
+zle -N ccd-fix
+zle -N ccd-menu
+zle -N ccd-explain-paged
+zle -N ccd-help-widget
+[[ -n $CLAUDE_CMD_KEY_GEN ]] && bindkey "$CLAUDE_CMD_KEY_GEN" ccd-generate
+[[ -n $CLAUDE_CMD_KEY_EXPLAIN ]] && bindkey "$CLAUDE_CMD_KEY_EXPLAIN" ccd-explain
+[[ -n $CLAUDE_CMD_KEY_FIX ]] && bindkey "$CLAUDE_CMD_KEY_FIX" ccd-fix
+if [[ -n $CLAUDE_CMD_KEY_MENU ]]; then
+  bindkey "$CLAUDE_CMD_KEY_MENU" ccd-menu
+  # ⌃⇧; types ':' on most layouts, so depending on its settings Ghostty can report it as ⌃: instead of ⌃⇧;.
+  # With the default key, bind those spellings too.
+  if [[ $CLAUDE_CMD_KEY_MENU == $'\e[59;6u' ]]; then
+    () {
+      local k
+      for k in $'\e[58;5u' $'\e[58;6u' $'\e[27;5;58~' $'\e[27;6;58~' $'\e[27;6;59~'; do
+        bindkey "$k" ccd-menu
+      done
+    }
+  fi
+fi
+
+# ── menu (⌃⇧; in Ghostty) ───────────────────────────────────────────────────────
+#
+# One key opens it; the options appear in the bottom area and the next key picks one. Any other key closes it.
+
+typeset -ga _cc_menu=(
+  'e:explain the command on the line (empty line: the previous command)'
+  'E:explain in a pager (scrollable; same explanation, no new call)'
+  'f:fix the previous command (type a hint first, e.g. the error message)'
+  'h:all keys and commands'
+  'p:edit your preferences'
+  'c:show the context Claude receives'
+  'r:refresh the list of installed tools'
+)
+
+_cc_menu_text() {
+  local item lines="ccd ─ pick one (any other key closes)"
+  for item in $_cc_menu; do
+    lines+=$'\n'"  ${item%%:*}  ${item#*:}"
+  done
+  print -rn -- $lines
+}
+
+# run a helper command on the terminal from a widget; the line stays as it is and nothing goes into history
+_cc_run() {
+  zle -I
+  "$@" </dev/tty >/dev/tty 2>&1
+  zle reset-prompt
+}
+
+#: [ccd, more] zle widget (⌃⇧; in Ghostty): show the menu, then run the option of the next key
+ccd-menu() {
+  _cc_bar "$(_cc_menu_text)"
+  zle -R
+  local key
+  read -k 1 key || key=
+  _cc_bar ""
+  case $key in
+    e) zle ccd-explain ;;
+    E) zle ccd-explain-paged ;;
+    f) zle ccd-fix ;;
+    h) zle ccd-help-widget ;;
+    p) _cc_run ccd-prefs ;;
+    c) _cc_run ccd-context ;;
+    r) _cc_run ccd-refresh ;;
+  esac
+  return 0
+}
 
 # ── helper commands ────────────────────────────────────────────────────────────
 
-#: edit the claude-cmd preferences (preferred CLI tools, option style) via chezmoi
-claude-cmd-prefs() {
+#: [ccd] edit your ccd preferences (preferred CLI tools, option style); via chezmoi when it manages them
+ccd-prefs() {
   if (( $+commands[chezmoi] )) && chezmoi source-path "$CLAUDE_CMD_PREFS" &>/dev/null; then
     chezmoi edit --apply "$CLAUDE_CMD_PREFS"
   else
@@ -473,36 +577,42 @@ claude-cmd-prefs() {
   fi
 }
 
-#: refresh the list of installed tools that claude-cmd sends as context
-claude-cmd-refresh() {
-  _cc_refresh_tools && print -r -- "claude-cmd: tool list refreshed ($(wc -w <$CLAUDE_CMD_CACHE/brew-leaves.txt | tr -d ' ') Homebrew packages)"
+#: [ccd, more] refresh the list of installed tools that ccd sends as context
+ccd-refresh() {
+  _cc_refresh_tools && print -r -- "ccd: tool list refreshed ($(wc -w <$CLAUDE_CMD_CACHE/brew-leaves.txt | tr -d ' ') Homebrew packages)"
 }
 
-#: show exactly what context claude-cmd sends to Claude
-claude-cmd-context() { _cc_context }
+#: [ccd, more] show exactly what context ccd sends to Claude
+ccd-context() { _cc_context }
 
-#: overview of the widget's keys, rendered as markdown; calls no model
-claude-cmd-help() {
+#: [ccd] all ccd keys and commands; calls no model
+ccd-help() {
   emulate -L zsh
-  local help helprow=""
-  [[ -n $CLAUDE_CMD_KEY_HELP ]] && helprow="| \`$(_cc_keylabel $CLAUDE_CMD_KEY_HELP)\` | This overview. |"$'\n'
-  help="# claude-cmd
+  local gen=$(_cc_keylabel $CLAUDE_CMD_KEY_GEN) rows="" item
+  rows+="| \`$gen\` | Turn the text on the line into a command. Modify an existing command with \`command # instruction\`. |"$'\n'
+  rows+="| \`$gen\` again | Next of the three alternatives (local, no new request). |"$'\n'
+  if [[ -n $CLAUDE_CMD_KEY_MENU ]]; then
+    local menu=$(_cc_keylabel $CLAUDE_CMD_KEY_MENU)
+    rows+="| \`$menu\` | Menu: shows the options below; the next key picks one. |"$'\n'
+    for item in $_cc_menu; do
+      rows+="| \`$menu\` \`${item%%:*}\` | ${(C)item[3]}${item[4,-1]}. |"$'\n'
+    done
+  fi
+  [[ -n $CLAUDE_CMD_KEY_EXPLAIN ]] && rows+="| \`$(_cc_keylabel $CLAUDE_CMD_KEY_EXPLAIN)\` | Explain the command on the line (empty: the previous command). |"$'\n'
+  [[ -n $CLAUDE_CMD_KEY_FIX ]] && rows+="| \`$(_cc_keylabel $CLAUDE_CMD_KEY_FIX)\` | Fix the previous command. Type a hint first, e.g. the error message. |"$'\n'
+  rows+="| \`⌃_\` | Undo. |"
+  print -r -- "# ccd
 
 | Key | What |
 |---|---|
-| \`$(_cc_keylabel $CLAUDE_CMD_KEY_GEN)\` | Turn the text in the buffer into a command. Modify an existing command with \`command # instruction\`. |
-| \`$(_cc_keylabel $CLAUDE_CMD_KEY_GEN)\` again | Next of the three alternatives (local, no new request). |
-| \`$(_cc_keylabel $CLAUDE_CMD_KEY_EXPLAIN)\` | Explain the command in the buffer (empty: the previous command). |
-| \`$(_cc_keylabel $CLAUDE_CMD_KEY_FIX)\` | Fix the previous command. Type a hint first, e.g. the error message. |
-| \`⌃_\` | Undo. |
-${helprow}
-Helpers: \`claude-cmd-prefs\`, \`claude-cmd-refresh\`, \`claude-cmd-context\`."
-  print -r -- "$help" | _cc_render
+$rows
+
+Commands: \`ccd-help\`, \`ccd-prefs\`, \`ccd-page\` (last explanation in a pager), \`ccd-context\`, \`ccd-refresh\`." | _cc_render
 }
 
-#: zle widget (⌃⇧; in Ghostty): shows the overview above the prompt, without a model call
-claude-cmd-help-widget() {
-  _cc_bar "$(claude-cmd-help)"
+#: [ccd, more] zle widget (⌃⇧; h in Ghostty): show the overview under the line, without a model call
+ccd-help-widget() {
+  _cc_bar "$(ccd-help)"
 }
 
 # Opt-in for a `help` command that lists the `#:` description lines of the files in $HELP_SOURCES: when that
