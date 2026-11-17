@@ -107,14 +107,31 @@ Rules:
 
 _cc_sys_explain() {
   print -r -- "Explain the given zsh command, in $CLAUDE_CMD_LANG, for the machine described in <context>.
-Output GitHub-flavoured markdown, which is rendered in the terminal:
-- Start with one sentence on what the command does as a whole.
-- Then explain every relevant part (pipe stage, option, argument) in ONE markdown table with the columns Part and Meaning (column titles in $CLAUDE_CMD_LANG), one row per part, in command order. Put a sub-part such as an option of a pipe stage in its own row. No nested lists, no arrows.
-- In table cells wrap every command, option and path in single backticks, and write a literal pipe character as \\| so it does not split the cell.
-- Put multi-line snippets in fenced code blocks and always give the fence a language (\`\`\`sh).
+Output GitHub-flavoured markdown, which is rendered in the terminal. Translate every label below into $CLAUDE_CMD_LANG.
+
+Start with one sentence on what the command does as a whole.
+
+A simple command (no &&, ||, ; or |): one markdown table with the columns Part and Meaning, one row per option or
+argument, in command order.
+
+A compound command: split it into steps at every &&, ||, ; and |. For every step, in command order:
+1. A line with the step number and the step itself, like: **1.** \`git branch --merged main\`
+2. A table with the columns Part and Meaning for that step only: the command and each of its options and arguments
+   in its own row. Operators never get a row.
+3. Unless it is the last step, one line that connects it to the next step, saying what the operator does, followed
+   by what the step produces:
+   - after |: what flows into the next step, as 'I expect output like:' plus a short realistic example, either a
+     few values in backticks on the same line or a \`\`\`text block of at most 4 lines;
+   - after &&: 'only if this succeeds', after ||: 'only if this fails', after ;: 'then, regardless of the result'.
+
+Rules:
+- Wrap every command, option, path and example value in backticks, and write a literal pipe character in a table
+  cell as \\| so it does not split the cell.
+- Code fences always get a language: \`\`\`sh for commands, \`\`\`text for output.
 - If the command is destructive or irreversible, end with a line starting with '⚠ ' that says what can be lost.
-- If an option does not exist on this OS's version of the tool, say so explicitly.
-- No headings, no preamble, no closing remarks. Keep every Meaning cell to one short sentence."
+- If an option does not exist on this OS's version of the tool, say so in its row.
+- No headings, no nested lists, no arrows, no preamble, no closing remarks. Keep every Meaning cell to one short
+  sentence."
 }
 
 # ── claude ───────────────────────────────────────────────────────────────────
