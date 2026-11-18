@@ -88,16 +88,16 @@ Set these before the plugin is loaded.
 ## Tests
 
 ```sh
-zsh tests/run.zsh
+mise run test
 ```
 
-No framework needed, only zsh. `tests/bin/claude` is a fake Claude CLI that records its arguments and input and answers with fixtures, and `tests/glow-bin/glow` is a fake glow.
+`mise tasks` lists the other tasks. Without mise, `zsh tests/run.zsh` does the same: no framework needed, only zsh. `tests/bin/claude` is a fake Claude CLI that records its arguments and input and answers with fixtures, and `tests/glow-bin/glow` is a fake glow.
 
 - `unit.test.zsh`: parsing, the destructive-command check, key labels, rendering, prompts, the call to `claude`, context, help.
 - `settings.test.zsh`: default and overridden settings and key bindings, in and outside Ghostty.
 - `widgets.test.zsh`: an interactive zsh in a pseudo-terminal (`zsh/zpty`), driven with real key presses. A probe key reads the line and the bottom area back.
 
-GitHub Actions runs the suite on macOS, with real glow.
+GitHub Actions runs `mise run ci` on macOS, with the real glow pinned in `mise.toml`.
 
 ## Known limitations
 

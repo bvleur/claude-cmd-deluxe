@@ -1,0 +1,20 @@
+[tools]
+# Only for the smoke test that uses the real glow; the plugin itself needs only zsh.
+glow = "3.0.0"
+
+[tasks."check:syntax"]
+description = "Parse the plugin and the tests with zsh -n"
+run = "for f in claude-cmd-deluxe.plugin.zsh tests/*.zsh; do zsh -n \"$f\" || exit 1; done"
+
+[tasks.check]
+description = "Run every check"
+depends = ["check:*"]
+
+[tasks.test]
+description = "Run the tests, each file in a clean zsh"
+usage = 'arg "[file]" var=#true help="Test files to run, e.g. tests/unit.test.zsh (default: all)"'
+run = 'eval "set -- ${usage_file:-}"; zsh tests/run.zsh "$@"'
+
+[tasks.ci]
+description = "Everything CI runs: the checks and the tests"
+depends = ["check", "test"]
