@@ -61,7 +61,7 @@ test_case "a failing claude shows its error and leaves the line alone"
 print -r -- 'boom' >| $CC_TEST_DIR/fail
 pty_start
 pty_send "x$CTRL_G"
-assert_true "no error shown: $STATE_BOTTOM" pty_wait_bottom 'ccd: no usable answer — boom'
+assert_true "no error shown: $STATE_BOTTOM" pty_wait_bottom 'ccd: no usable answer — boom (details: ccd-last)'
 assert_eq 'x' "$STATE_BUFFER"
 
 test_case "⌃X e shows the explanation under the line and leaves the line alone"

@@ -144,11 +144,13 @@ Rules:
 
 # ── claude ───────────────────────────────────────────────────────────────────
 
-# $1 = system prompt, $2 = user message → stdout; stderr in $CLAUDE_CMD_CACHE/last-error
+# $1 = system prompt, $2 = user message → stdout. Everything about the call (exit status, stderr, the raw
+# answer) goes to $CLAUDE_CMD_CACHE/last-call.log, so a failure can be diagnosed afterwards (`ccd-last`).
 _cc_call() {
   mkdir -p $CLAUDE_CMD_CACHE
-  # A here-string, not a pipe: run in the background, claude is then the only child to clean up
-  command claude -p \
+  local out rc errf=$CLAUDE_CMD_CACHE/last-error
+  # A here-string, not a pipe: fewer processes to stop when _cc_ask cancels the call
+  out=$(command claude -p \
     --model "$CLAUDE_CMD_MODEL" \
     --system-prompt "$1" \
     --tools "" \
@@ -156,14 +158,40 @@ _cc_call() {
     --disable-slash-commands \
     --no-session-persistence \
     <<<"$2" \
-    2>| $CLAUDE_CMD_CACHE/last-error
+    2>| $errf)
+  rc=$?
+  {
+    print -r -- "when:   $(date '+%Y-%m-%d %H:%M:%S')"
+    print -r -- "model:  $CLAUDE_CMD_MODEL"
+    print -r -- "exit:   $rc"
+    print -r -- "--- stderr ---"
+    [[ -r $errf ]] && print -r -- "$(<$errf)"
+    print -r -- "--- stdout (what claude answered) ---"
+    print -r -- "$out"
+  } >| $CLAUDE_CMD_CACHE/last-call.log
+  [[ -n $out ]] && print -r -- "$out"
+  return $rc
 }
 
+# One-line reason for the bottom area: the first stderr line, else the exit status, else what claude said.
 _cc_error_msg() {
+  emulate -L zsh
+  setopt extendedglob
   local -a errlines
   [[ -r $CLAUDE_CMD_CACHE/last-error ]] && errlines=( ${(f)"$(<$CLAUDE_CMD_CACHE/last-error)"} )
   local err=${errlines[1]}
-  print -rn -- "ccd: no usable answer${err:+ — $err}"
+  if [[ -z $err && -r $CLAUDE_CMD_CACHE/last-call.log ]]; then
+    local rc line
+    for line in "${(@f)$(<$CLAUDE_CMD_CACHE/last-call.log)}"; do
+      [[ $line == (#b)exit:[[:space:]]#([0-9]##) ]] && { rc=$match[1]; break; }
+    done
+    if [[ $rc != 0 && -n $rc ]]; then
+      err="claude exited with status $rc and printed nothing"
+    else
+      err="claude answered with nothing"
+    fi
+  fi
+  print -rn -- "ccd: no usable answer${err:+ — $err} (details: ccd-last)"
 }
 
 # Parse "@@@ label\ncommand…" blocks into _cc_alts / _cc_labels
@@ -415,6 +443,13 @@ _cc_busy() {
   _cc_bar "⏳ claude-cmd-$text ($CLAUDE_CMD_MODEL) $verb…"
 }
 
+# Stop a process and everything below it (children first, so nothing is orphaned)
+_cc_kill_tree() {
+  local c
+  for c in $(pgrep -P $1 2>/dev/null); do _cc_kill_tree $c; done
+  kill $1 2>/dev/null
+}
+
 # Ask claude ($2 = system prompt, $3 = message) while "claude-cmd-deluxe" animates; the answer goes to REPLY.
 # claude runs in the background and the animation is redrawn until it is done, so the line stays editable
 # after the answer arrives like before. Whatever ends this (answer, error, ⌃C), the animation is cleared
@@ -437,8 +472,7 @@ _cc_ask() {
     REPLY=$(<$tmp)
   } always {
     if [[ -n $pid ]] && kill -0 $pid 2>/dev/null; then
-      pkill -P $pid 2>/dev/null   # claude, the child of the background function
-      kill $pid 2>/dev/null
+      _cc_kill_tree $pid
       wait $pid 2>/dev/null
     fi
     rm -f $tmp
@@ -646,6 +680,16 @@ ccd-refresh() {
 #: [ccd, more] show exactly what context ccd sends to Claude
 ccd-context() { _cc_context }
 
+#: [ccd, more] show the full log of the last claude call (exit status, stderr, raw answer) for troubleshooting
+ccd-last() {
+  if [[ -r $CLAUDE_CMD_CACHE/last-call.log ]]; then
+    print -r -- "# $CLAUDE_CMD_CACHE/last-call.log"
+    command cat $CLAUDE_CMD_CACHE/last-call.log
+  else
+    print -r -- "ccd: no claude call logged yet"
+  fi
+}
+
 #: [ccd, more] all ccd keys and commands; calls no model
 ccd-help() {
   emulate -L zsh
@@ -668,7 +712,7 @@ ccd-help() {
 |---|---|
 $rows
 
-Commands: \`ccd-help\`, \`ccd-prefs\`, \`ccd-page\` (last explanation in a pager), \`ccd-context\`, \`ccd-refresh\`." | _cc_render
+Commands: \`ccd-help\`, \`ccd-prefs\`, \`ccd-page\` (last explanation in a pager), \`ccd-context\`, \`ccd-refresh\`, \`ccd-last\` (log of the last claude call)." | _cc_render
 }
 
 #: [ccd, more] zle widget (⌃⇧; h in Ghostty): show the overview under the line, without a model call

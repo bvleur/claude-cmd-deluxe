@@ -34,6 +34,7 @@ Helper commands:
 - `ccd-page`: the last explanation in a pager (the way to scroll outside Ghostty).
 - `ccd-context`: show exactly what context Claude receives.
 - `ccd-refresh`: refresh the cached list of installed Homebrew packages.
+- `ccd-last`: print the log of the last `claude` call (exit status, stderr, the raw answer). The error line under the prompt ends with `(details: ccd-last)` when a call gave no usable answer.
 
 Every public function has a `#: [ccd] description` line above it (`[ccd, more]` for the ones you rarely type). If you have a `help` command that collects those lines from the files in a `HELP_SOURCES` array, declare the array (`typeset -ga HELP_SOURCES`) before loading the plugin and the plugin adds itself to it.
 
@@ -67,7 +68,7 @@ Set these before the plugin is loaded.
 | `CLAUDE_CMD_GLOW_STYLE` | `dark` |
 | `CLAUDE_CMD_BOTTOM_STYLE` | `fg=244` (grey): base colour of everything under the line, as a `region_highlight` spec; empty for the terminal's default |
 | `CLAUDE_CMD_PREFS` | `~/.config/claude-cmd/prefs.md` |
-| `CLAUDE_CMD_CACHE` | `~/.cache/claude-cmd` (cached `brew leaves`, the last error message) |
+| `CLAUDE_CMD_CACHE` | `~/.cache/claude-cmd` (cached `brew leaves`, `last-call.log` with the last claude call) |
 | `CLAUDE_CMD_KEY_GEN` | `$'\e[59;5u'` (`⌃;`) in Ghostty, `^G` elsewhere |
 | `CLAUDE_CMD_KEY_MENU` | `$'\e[59;6u'` (`⌃⇧;`) in Ghostty, empty (no menu) elsewhere |
 | `CLAUDE_CMD_KEY_EXPLAIN` | empty in Ghostty (use the menu), `^Xe` elsewhere |
