@@ -29,7 +29,7 @@ export LANG=$CC_LOCALE LC_ALL=$CC_LOCALE
 
 # ── assertions ────────────────────────────────────────────────────────────────
 
-test_case() { CC_CURRENT=$1; rm -f $CC_TEST_DIR/answer $CC_TEST_DIR/fail $CC_TEST_DIR/claude-args $CC_TEST_DIR/claude-stdin }
+test_case() { CC_CURRENT=$1; rm -f $CC_TEST_DIR/answer $CC_TEST_DIR/fail $CC_TEST_DIR/claude-args $CC_TEST_DIR/claude-stdin $CC_TEST_DIR/delay $CC_TEST_DIR/claude-pid }
 
 _cc_fail() {
   (( CC_FAILS++ ))

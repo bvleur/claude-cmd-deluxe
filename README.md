@@ -101,7 +101,8 @@ GitHub Actions runs `mise run ci` on macOS, with the real glow pinned in `mise.t
 
 ## Known limitations
 
-- `⌃C` while waiting aborts the whole line.
+- `⌃C` while waiting aborts the whole line (the busy animation is cleared and claude is stopped).
+- While waiting, keys you type are queued and handled once the answer is in; the animation needs `zsh/zselect` (falls back to `sleep`) and uses 24-bit colour, mapped to 256 colours on terminals without truecolor. `NO_COLOR` turns the sweep off.
 - If your gateway doesn't know the `haiku` alias, set a full model ID in `CLAUDE_CMD_MODEL`.
 
 ## License

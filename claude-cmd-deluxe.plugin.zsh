@@ -44,6 +44,9 @@ fi
 )
 
 zmodload zsh/parameter 2>/dev/null
+zmodload zsh/datetime zsh/zselect zsh/mathfunc 2>/dev/null
+# Without truecolor, let zle map the animation's #rrggbb colours to the nearest of 256
+[[ $COLORTERM == (truecolor|24bit) ]] || zmodload zsh/nearcolor 2>/dev/null
 
 typeset -ga _cc_alts _cc_labels
 typeset -gi _cc_idx=0 _cc_last_status=0
@@ -144,13 +147,15 @@ Rules:
 # $1 = system prompt, $2 = user message → stdout; stderr in $CLAUDE_CMD_CACHE/last-error
 _cc_call() {
   mkdir -p $CLAUDE_CMD_CACHE
-  print -r -- "$2" | command claude -p \
+  # A here-string, not a pipe: run in the background, claude is then the only child to clean up
+  command claude -p \
     --model "$CLAUDE_CMD_MODEL" \
     --system-prompt "$1" \
     --tools "" \
     --strict-mcp-config \
     --disable-slash-commands \
     --no-session-persistence \
+    <<<"$2" \
     2>| $CLAUDE_CMD_CACHE/last-error
 }
 
@@ -386,19 +391,71 @@ _cc_show() {
   _cc_bar "${warn}✦ ccd ${_cc_idx}/${#_cc_alts}${label:+ · $label}   │   $(_cc_hints next)"
 }
 
+# The "busy" line: claude-cmd-deluxe, with "deluxe" in an RGB colour sweep that moves along with the clock.
+# $1 = what ccd is doing ("thinking"). Without colour (NO_COLOR) it is static.
 _cc_busy() {
-  _cc_bar "⏳ ccd ($CLAUDE_CMD_MODEL) $1…"
+  local verb=$1 text="" c i h r g b x
+  local -F t=$EPOCHREALTIME
+  if [[ -n $NO_COLOR ]]; then
+    text="deluxe"
+  else
+    for i in {0..5}; do
+      # hue (0..359) drifts with time, 45° apart per letter; then HSV with S = V = 1 to RGB (0..255)
+      h=$(( (int(t * 270) - i * 45) % 360 ))
+      (( h < 0 )) && (( h += 360 ))
+      x=$(( 255 * (60 - (h % 120 - 60 < 0 ? 60 - h % 120 : h % 120 - 60)) / 60 ))
+      case $(( h / 60 )) in
+        0) r=255 g=$x b=0 ;;   1) r=$x g=255 b=0 ;;   2) r=0 g=255 b=$x ;;
+        3) r=0 g=$x b=255 ;;   4) r=$x g=0 b=255 ;;   *) r=255 g=0 b=$x ;;
+      esac
+      text+=$'\e[1;38;2;'$r';'$g';'${b}m${${:-deluxe}[i+1]}
+    done
+    text+=$'\e[0m'
+  fi
+  _cc_bar "⏳ claude-cmd-$text ($CLAUDE_CMD_MODEL) $verb…"
+}
+
+# Ask claude ($2 = system prompt, $3 = message) while "claude-cmd-deluxe" animates; the answer goes to REPLY.
+# claude runs in the background and the animation is redrawn until it is done, so the line stays editable
+# after the answer arrives like before. Whatever ends this (answer, error, ⌃C), the animation is cleared
+# and claude is stopped and reaped, so nothing is left running.
+# $1 = the verb in the busy line.
+_cc_ask() {
+  setopt local_options no_monitor no_notify no_bgnice
+  local verb=$1 pid=""
+  local tmp=$CLAUDE_CMD_CACHE/answer.$$
+  REPLY=""
+  mkdir -p $CLAUDE_CMD_CACHE
+  {
+    _cc_call "$2" "$3" >| $tmp &
+    pid=$!
+    while kill -0 $pid 2>/dev/null; do
+      _cc_busy "$verb"
+      zselect -t 8 2>/dev/null || sleep 0.08   # 80 ms; no zselect: plain sleep
+    done
+    wait $pid 2>/dev/null
+    REPLY=$(<$tmp)
+  } always {
+    if [[ -n $pid ]] && kill -0 $pid 2>/dev/null; then
+      pkill -P $pid 2>/dev/null   # claude, the child of the background function
+      kill $pid 2>/dev/null
+      wait $pid 2>/dev/null
+    fi
+    rm -f $tmp
+    _cc_bar ""                    # the caller shows the result; after ⌃C this clears the animation
+  }
 }
 
 # ── widgets ──────────────────────────────────────────────────────────────────
 
-_cc_request() {  # $1 = user message
+_cc_request() {  # $1 = user message, $2 = verb for the busy line
   local out
-  out=$(_cc_call "$(_cc_sys_commands)" "<context>
+  _cc_ask "${2:-thinking}" "$(_cc_sys_commands)" "<context>
 $(_cc_context)
 </context>
 
-$1")
+$1"
+  out=$REPLY
   _cc_parse "$out"
   if (( ! ${#_cc_alts} )); then
     _cc_bar "$(_cc_error_msg)"
@@ -420,9 +477,8 @@ ccd-generate() {
     _cc_bar "ccd: first type what you want to do   │   $(_cc_hints)"
     return
   fi
-  _cc_busy "thinking"
   _cc_request "Input (natural-language request, an existing command to fix/improve, or a command followed by '# <instruction>' to modify it accordingly):
-$BUFFER"
+$BUFFER" thinking
 }
 
 #: [ccd, more] zle widget (⌃⇧; e in Ghostty, ⌃X e elsewhere): explain the command on the line, or the previous one
@@ -451,14 +507,14 @@ _cc_explain_fetch() {
     return 1
   fi
   [[ $target == $_cc_expl_target && -n $_cc_expl_md ]] && return 0
-  _cc_busy "explaining"
   local out
-  out=$(_cc_call "$(_cc_sys_explain)" "<context>
+  _cc_ask explaining "$(_cc_sys_explain)" "<context>
 $(_cc_context)
 </context>
 
 Command:
-$target")
+$target"
+  out=$REPLY
   if [[ -z ${out//[[:space:]]/} ]]; then
     _cc_bar "$(_cc_error_msg)"
     return 1
@@ -491,11 +547,10 @@ ccd-fix() {
   fi
   local hint=${BUFFER//[[:space:]]/}
   hint=${hint:+$BUFFER}
-  _cc_busy "fixing"
   _cc_request "Fix the previous command so it does what the user intended.
 Previous command (exit status $_cc_last_status):
 $last
-User hint about what went wrong: ${hint:-none}"
+User hint about what went wrong: ${hint:-none}" fixing
 }
 
 _cc_precmd() { _cc_last_status=$? }
