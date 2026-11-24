@@ -139,7 +139,23 @@ test_case "call: stderr is kept for the error message"
 print -r -- 'gateway said no' >| $CC_TEST_DIR/fail
 out=$(_cc_call x y)
 assert_eq '' "$out"
-assert_eq 'ccd: no usable answer — gateway said no' "$(_cc_error_msg)"
+assert_eq 'ccd: no usable answer — gateway said no (details: ccd-last)' "$(_cc_error_msg)"
+assert_contains "$(ccd-last)" 'exit:   1'
+assert_contains "$(ccd-last)" 'gateway said no'
+
+test_case "call: no stderr, no output: the message names the exit status"
+rm -f $CC_TEST_DIR/fail
+: >| $CC_TEST_DIR/fail
+out=$(_cc_call x y)
+assert_eq 'ccd: no usable answer — claude exited with status 1 and printed nothing (details: ccd-last)' "$(_cc_error_msg)"
+
+test_case "call: the raw answer is logged"
+rm -f $CC_TEST_DIR/fail
+print -r -- 'hello raw' >| $CC_TEST_DIR/answer
+out=$(_cc_call x y)
+assert_eq 'hello raw' "$out"
+assert_contains "$(ccd-last)" 'hello raw'
+rm -f $CC_TEST_DIR/answer
 
 # ── context ───────────────────────────────────────────────────────────────────
 
