@@ -191,4 +191,27 @@ assert_eq '' "$STATE_BOTTOM"
 assert_not_contains "$STATE_HL" 'fg=203' 'highlight left after the line was accepted'
 assert_not_contains "$STATE_HL" 'fg=244' 'base colour left after the line was accepted'
 
+test_case "while claude thinks, the bottom area shows claude-cmd-deluxe, then it gives way to the answer"
+print -r -- 2 >| $CC_TEST_DIR/delay
+pty_start
+pty_send "list files$CTRL_G"
+assert_true "no busy line" pty_expect '*claude-cmd-*thinking…*'
+assert_contains "$CC_PTY_OUT" $'\e[1m\e[38;' "deluxe not coloured"
+assert_true "no answer after the delay: $STATE_BOTTOM" pty_wait_bottom 'ccd 1/3 · first label'
+assert_not_contains "$STATE_BOTTOM" 'thinking' 'busy line left behind'
+
+test_case "⌃C while claude thinks clears the animation and stops claude"
+print -r -- 30 >| $CC_TEST_DIR/delay
+pty_start
+pty_send "list files$CTRL_G"
+assert_true "no busy line" pty_expect '*claude-cmd-*thinking…*'
+until [[ -s $CC_TEST_DIR/claude-pid ]]; do sleep 0.05; done
+pid=$(<$CC_TEST_DIR/claude-pid)
+pty_send $'\x03'
+sleep 0.5
+pty_state
+assert_eq '' "$STATE_BOTTOM" 'animation left behind after ⌃C'
+gone() { local -F d=$(( EPOCHREALTIME + 3 )); while kill -0 $1 2>/dev/null; do (( EPOCHREALTIME > d )) && return 1; sleep 0.05; done }
+assert_true "claude still running after ⌃C" gone $pid
+
 finish
