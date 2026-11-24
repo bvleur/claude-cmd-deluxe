@@ -428,14 +428,15 @@ _cc_busy() {
     text="deluxe"
   else
     for i in {0..5}; do
-      # hue (0..359) drifts with time, 45° apart per letter; then HSV with S = V = 1 to RGB (0..255)
-      h=$(( (int(t * 270) - i * 45) % 360 ))
+      # hue (0..359) drifts with time, 45° apart per letter; then HSV with S = V = 1 to RGB (0..255), toned down below
+      h=$(( (int(t * 420) - i * 45) % 360 ))
       (( h < 0 )) && (( h += 360 ))
       x=$(( 255 * (60 - (h % 120 - 60 < 0 ? 60 - h % 120 : h % 120 - 60)) / 60 ))
       case $(( h / 60 )) in
         0) r=255 g=$x b=0 ;;   1) r=$x g=255 b=0 ;;   2) r=0 g=255 b=$x ;;
         3) r=0 g=$x b=255 ;;   4) r=$x g=0 b=255 ;;   *) r=255 g=0 b=$x ;;
       esac
+      (( r = 100 + r * 120 / 255, g = 100 + g * 120 / 255, b = 100 + b * 120 / 255 ))   # muted: 100..220
       text+=$'\e[1;38;2;'$r';'$g';'${b}m${${:-deluxe}[i+1]}
     done
     text+=$'\e[0m'
@@ -466,7 +467,7 @@ _cc_ask() {
     pid=$!
     while kill -0 $pid 2>/dev/null; do
       _cc_busy "$verb"
-      zselect -t 8 2>/dev/null || sleep 0.08   # 80 ms; no zselect: plain sleep
+      zselect -t 6 2>/dev/null || sleep 0.06   # 60 ms; no zselect: plain sleep
     done
     wait $pid 2>/dev/null
     REPLY=$(<$tmp)
